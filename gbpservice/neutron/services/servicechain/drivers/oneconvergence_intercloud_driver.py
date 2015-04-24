@@ -16,6 +16,8 @@ from neutron.common import log
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
+from neutron.services.loadbalancer.drivers.OneConvergence.device_manager
+    .DeviceManager as ServiceManager
 from oslo.config import cfg
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
@@ -47,6 +49,10 @@ LOG = logging.getLogger(__name__)
 
 class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
 
+    def __init__(self):
+        super(ChainWithTwoArmAppliance, self).__init__()
+        self.svc_mgr = ServiceManager()
+
     @log.log
     def create_servicechain_node_precommit(self, context):
         if context.current['service_type'] not in sc_supported_type:
@@ -60,6 +66,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             LOG.error(_("Service Config is not defined for the service"
                         " chain Node"))
             return
+        instance_type = sc_node['service_type']
         stack_template = jsonutils.loads(stack_template)
         config_param_values = sc_instance.get('config_param_values', {})
         stack_params = {}
@@ -78,6 +85,16 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         svc_mgmt_ptgs = self._grouppolicy_plugin.get_policy_target_groups(
             context._plugin_context, filters)
         pt_type = TRANSPARENT_PT
+
+        # Create port on provider pt and service mgmt pt
+        provider_pt = self.create_pt(self, context, provider_ptg_id)
+        svc_mgmt_pt = self.create_pt(self, context, svc_mgmt_ptgs[0]['id'])
+
+        # Create service instance
+        _user_token = self.svc_mgr._get_user_token(context.tenant_id)
+        service_instance_id = self.svc_mgr._create_instance(
+            _user_token, context.tenant_id, instance_type, provider_pt[
+                "port_id"], svc_mgmt_pt["port_id"])
 
         if sc_node['service_type'] == pconst.LOADBALANCER:
             pt_type = SERVICE_PT
@@ -141,3 +158,28 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     "pool_id": {"Ref": "HaproxyPool"},
                     "protocol_port": 80,
                     "weight": 1}}
+
+    def create_pt(self, context, ptg_id):
+        pt = dict(name="port1", description={}, tenant_id=context.tenant_id,
+                  policy_target_group_id=ptg_id)
+        return self._grouppolicy_plugin.create_policy_target(
+            context._plugin_context, pt)
+
+    def delete_servicechain_instance_postcommit(self, context):
+        filters = {'id': context.current.servicechain_specs}
+        specs = context._plugin.get_servicechain_specs(context._plugin_context,
+                                               filters)
+
+        for spec in specs:
+            node_list = spec.get('nodes')
+            filters = {'id': node_list}
+            sc_nodes = context._plugin.get_servicechain_nodes(
+                context._plugin_context, filters)
+            for node in sc_nodes:
+                self.svc_mgr.delete_service_instance(context,
+                                                     node['service_type'])
+
+        self._delete_servicechain_instance_stacks(context._plugin_context,
+                                                  context.current['id'])
+
+
