@@ -16,8 +16,8 @@ from neutron.common import log
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from neutron.services.loadbalancer.drivers.OneConvergence.device_manager
-    .DeviceManager as ServiceManager
+from neutron.services.loadbalancer.drivers.OneConvergence.device_manager  \
+    import DeviceManager as ServiceManager
 from oslo.config import cfg
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
