@@ -16,8 +16,6 @@ from neutron.common import log
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from neutron.services.loadbalancer.drivers.OneConvergence.device_manager  \
-    import DeviceManager as ServiceManager
 from oslo.config import cfg
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
@@ -49,10 +47,6 @@ LOG = logging.getLogger(__name__)
 
 class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
 
-    def __init__(self):
-        super(ChainWithTwoArmAppliance, self).__init__()
-        self.svc_mgr = ServiceManager()
-
     @log.log
     def create_servicechain_node_precommit(self, context):
         if context.current['service_type'] not in sc_supported_type:
@@ -66,7 +60,6 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             LOG.error(_("Service Config is not defined for the service"
                         " chain Node"))
             return
-        instance_type = sc_node['service_type']
         stack_template = jsonutils.loads(stack_template)
         config_param_values = sc_instance.get('config_param_values', {})
         stack_params = {}
@@ -125,15 +118,6 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                 if parameter in node_params.keys():
                     stack_params[parameter] = config_param_values[parameter]
         LOG.debug(stack_template)
-	
-	# Create port on provider pt and service mgmt pt
-        provider_pt = self.create_pt(context, provider_ptg_id)
-        svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'])
-
-        # Create service instance
-        service_instance_id = self.svc_mgr.create_service_instance(context._plugin_context,
-                                                                   instance_type, provider_pt["port_id"], svc_mgmt_pt["port_id"])
-
         return stack_template, stack_params
 
     def _generate_pool_members(self, context, stack_template,
@@ -157,42 +141,3 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     "pool_id": {"Ref": "HaproxyPool"},
                     "protocol_port": 80,
                     "weight": 1}}
-
-    def create_pt(self, context, ptg_id):
-        pt = dict(name="port1", description="", tenant_id=context._plugin_context.tenant_id,
-                  policy_target_group_id=ptg_id, port_id=None)
-        return self._grouppolicy_plugin.create_policy_target(
-            context._plugin_context, {"policy_target": pt})
-
-    def delete_servicechain_instance_postcommit(self, context):
-        filters = {'id': context.current['servicechain_specs']}
-        specs = context._plugin.get_servicechain_specs(context._plugin_context,
-                                               filters)
-
-        for spec in specs:
-            node_list = spec.get('nodes')
-            filters = {'id': node_list}
-            sc_nodes = context._plugin.get_servicechain_nodes(
-                context._plugin_context, filters)
-            for node in sc_nodes:
-		instance_ports = self.svc_mgr.get_service_ports(context._plugin_context, node['service_type'])
-	        if instance_ports:
-		    if instance_ports.get("data_port_id"):
-			filters = {'port_id': [instance_ports['data_port_id']]}
-        		policy_targets = self._grouppolicy_plugin.get_policy_targets(context._plugin_context,
-                                               filters)
-			if policy_targets:
-			    self._grouppolicy_plugin.delete_policy_target(context._plugin_context, policy_targets[0]['id'])
-		    if instance_ports.get("mgmt_port_id"):
-			filters = {'port_id': [instance_ports['mgmt_port_id']]}
-                        policy_targets = self._grouppolicy_plugin.get_policy_targets(context._plugin_context,
-                                               filters)
-                        if policy_targets:
-                            self._grouppolicy_plugin.delete_policy_target(context._plugin_context, policy_targets[0]['id'])
-                self.svc_mgr.delete_service_instance(context._plugin_context,
-                                                     node['service_type'])
-
-        self._delete_servicechain_instance_stacks(context._plugin_context,
-                                                  context.current['id'])
-
-
