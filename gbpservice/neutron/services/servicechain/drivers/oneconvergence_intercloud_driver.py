@@ -16,7 +16,8 @@ from neutron.common import log
 from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from neutron.services.socli import ServiceOrchestratorClient as ServiceManager
+from neutron.services.socli.so_client import ServiceOrchestratorClient \
+    as ServiceManager
 from oslo.config import cfg
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
@@ -104,10 +105,10 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         # if 'consumer_pt_name' in config_param_names:
         #     config_param_values['consumer_pt_name'] = CONSUMER_PT_NAME % (
         #         order, pt_type)
-        # if 'service_chain_metadata' in config_param_names:
-        #     config_param_values['service_chain_metadata'] = (
-        #         SC_METADATA % (sc_instance_id, order, provider_ptg_id,
-        #                        svc_mgmt_ptgs[0]['id']))
+        if 'service_chain_metadata' in config_param_names:
+            config_param_values['service_chain_metadata'] = (
+                 SC_METADATA % (sc_instance_id, order, provider_ptg_id,
+                                svc_mgmt_ptgs[0]['id']))
         # if 'svc_mgmt_ptg' in config_param_names:
         #     config_param_values['svc_mgmt_ptg'] = svc_mgmt_ptgs[0]['id']
 
@@ -205,6 +206,8 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             for node in sc_nodes:
                 instance_ports = self.svc_mgr.get_service_ports(
                     context._plugin_context, node['service_type'])
+                # instance_ports = self.svc_mgr.get_service_ports(
+                #     context._plugin_context, node['service_type'])
                 if instance_ports:
                     if instance_ports.get("data_port_id"):
                         filters = {'port_id': [instance_ports['data_port_id']]}
