@@ -129,8 +129,13 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     stack_params[parameter] = config_param_values[parameter]
         LOG.debug(stack_template)
 
-        # Create port on provider pt and service mgmt pt
-        svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'])
+        # Create service mgmt pt we won't have floating ip for CISCO
+        svc_mgmt_port = self.svc_mgr.create_port(
+            context._plugin_context.tenant_id, svc_mgmt_ptgs[0]
+                ['l2_policy_id'], service_type=sc_node['service_type'])
+        # svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'])
+        svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'],
+                                     port_id=svc_mgmt_port['id'])
 
         # Create service instance
         instance_type = sc_node['service_type']
@@ -184,12 +189,13 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     "weight": 1}}
 
     # Magesh Need to pass port name for Cisco.
-    def create_pt(self, context, ptg_id, name=None):
+    def create_pt(self, context, ptg_id, name=None, port_id=None):
         if not name:
             name = "port1"
         pt = dict(name=name, description="",
                   tenant_id=context._plugin_context.tenant_id,
-                  policy_target_group_id=ptg_id, port_id=None)
+                  policy_target_group_id=ptg_id, port_id=port_id)
+
         return self._grouppolicy_plugin.create_policy_target(
             context._plugin_context, {"policy_target": pt})
 
