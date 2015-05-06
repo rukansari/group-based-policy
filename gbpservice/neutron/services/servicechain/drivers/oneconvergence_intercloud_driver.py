@@ -132,7 +132,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         # Create service mgmt pt we won't have floating ip for CISCO
         svc_mgmt_port = self.svc_mgr.create_port(
             context._plugin_context.tenant_id, svc_mgmt_ptgs[0]
-                ['l2_policy_id'], service_type=sc_node['service_type'])
+                ['subnets'][0], service_type=sc_node['service_type'])
         # svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'])
         svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'],
                                      port_id=svc_mgmt_port['id'])
