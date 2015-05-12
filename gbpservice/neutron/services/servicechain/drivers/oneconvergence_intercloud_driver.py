@@ -22,6 +22,7 @@ from oslo.config import cfg
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
 from gbpservice.neutron.services.servicechain.drivers import simplechain_driver
+from gbpservice.neutron.services.grouppolicy.common import constants
 
 
 appliance_driver_opts = [
@@ -33,7 +34,7 @@ appliance_driver_opts = [
 
 cfg.CONF.register_opts(appliance_driver_opts, "appliance_driver")
 
-sc_supported_type = [pconst.LOADBALANCER, 'FIREWALL_TRANSPARENT', 'IDS']
+sc_supported_type = [pconst.LOADBALANCER, 'FIREWALL', 'IDS']
 TRANSPARENT_PT = "transparent"
 SERVICE_PT = "service"
 PROVIDER_PT_NAME = "chain_provider_%s_%s"
@@ -75,9 +76,80 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         config_param_names = sc_spec.get('config_param_names', [])
         if config_param_names:
             config_param_names = ast.literal_eval(config_param_names)
+        else:
+            config_param_names = list()
+        # Retrieve classifier details
+        classifier_id = sc_instance.get('classifier_id')
+        classifier = self._grouppolicy_plugin.get_policy_classifier(
+            context._plugin_context, classifier_id)
 
-        provider_ptg_id = sc_instance.get('provider_ptg_id')
+        # Retrieve consumer details
         consumer_ptg_id = sc_instance.get('consumer_ptg_id')
+        consumer_ptg = self._grouppolicy_plugin.get_policy_target_group(
+            context._plugin_context, consumer_ptg_id)
+        # consumer_ptg_subnet_id = consumer_ptg[0]['subnets'][0]
+        subnet = self._core_plugin.get_subnet(
+            context._plugin_context, consumer_ptg['subnets'][0])
+        consumer_cidr = subnet['cidr']
+
+        # Retrieve provider details
+        provider_ptg_id = sc_instance.get('provider_ptg_id')
+        provider_ptg = self._grouppolicy_plugin.get_policy_target_group(
+            context._plugin_context, provider_ptg_id)
+        provider_policy_rule_sets_list = provider_ptg[
+            "provided_policy_rule_sets"]
+        provider_policy_rule_sets = \
+            self._grouppolicy_plugin.get_policy_rule_sets(
+                context._plugin_context,
+                filters={'id': provider_policy_rule_sets_list})
+
+        # Get service instance type
+        instance_type = sc_node['service_type']
+
+        # This is stupid
+        if instance_type == pconst.FIREWALL:
+            policy_rule_ids = list()
+            for rule_set in provider_policy_rule_sets:
+                policy_rule_ids.extend(rule_set.get("policy_rules"))
+
+            policy_rules = self._grouppolicy_plugin.get_policy_rules(
+                context._plugin_context, filters={'id': policy_rule_ids})
+
+            i = 0
+            policy_action_classifier_list = list()
+            for policy_rule in policy_rules:
+                policy_action_ids = policy_rule.get("policy_actions")
+                policy_actions_detail = \
+                    self._grouppolicy_plugin.get_policy_actions(
+                        context._plugin_context,
+                        filters={'id': policy_action_ids})
+                for policy_action in policy_actions_detail:
+                    if (policy_action["action_type"] ==
+                            constants.GP_ACTION_ALLOW):
+                        policy_action_classifier = \
+                            self._grouppolicy_plugin.get_policy_classifier(
+                                context._plugin_context, policy_rule.get(
+                                    "policy_classifier_id"))
+
+                        firewall_rule_dict = (
+                            dict(rule_no=(i+1),
+                            protocol=policy_action_classifier.get("protocol"),
+                            consumer_cidr=consumer_cidr,
+                            destination_port=policy_action_classifier.get(
+                                "port_range"))
+                        )
+
+                        rule_name = "Rule_%s" % i
+                        stack_template['resources'][rule_name] = \
+                            self._generate_firewall_rule_template(
+                            firewall_rule_dict)
+                        policy_action_classifier_list.append({'get_resource':
+                                                              rule_name})
+
+            stack_template['resources']['Firewall_Policy']['properties'][
+                'firewall_rules'] = policy_action_classifier_list
+
+
         sc_instance_id = sc_instance['id']
         filters = {'name': [SVC_MGMT_PTG_NAME]}
         svc_mgmt_ptgs = self._grouppolicy_plugin.get_policy_target_groups(
@@ -85,7 +157,6 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         pt_type = TRANSPARENT_PT
 
         if sc_node['service_type'] == pconst.LOADBALANCER:
-            # Magesh not required any more
             # pt_type = SERVICE_PT
             self._generate_pool_members(context, stack_template,
                                         config_param_values, provider_ptg_id)
@@ -93,8 +164,6 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                 value = self._get_ptg_subnet(context, provider_ptg_id)
                 config_param_values['Subnet'] = value
 
-        # Magesh : U told to commit these.Have I commented some required
-        # things also?
         # if 'provider_ptg' in config_param_names:
         #     config_param_values['provider_ptg'] = provider_ptg_id
         # if 'consumer_ptg' in config_param_names:
@@ -130,6 +199,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         LOG.debug(stack_template)
 
         # Create service mgmt pt we won't have floating ip for CISCO
+        firewall_desc = dict()
         svc_mgmt_port = self.svc_mgr.create_port(
             context._plugin_context.tenant_id, svc_mgmt_ptgs[0]
                 ['subnets'][0], service_type=sc_node['service_type'])
@@ -138,13 +208,16 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                                      port_id=svc_mgmt_port['id'])
 
         # Create service instance
-        instance_type = sc_node['service_type']
-
         if instance_type == pconst.FIREWALL:
             # Create provider & consumer port for Firewall
+            provider_port = self.svc_mgr.create_port(
+                context._plugin_context.tenant_id,provider_ptg['subnets'][0],
+                    service_type=sc_node['service_type'])
             provider_pt = self.create_pt(context, provider_ptg_id,
                                          name=PROVIDER_PT_NAME % (order,
-                                                                  pt_type))
+                                                                  pt_type),
+                                         port_id=provider_port["id"])
+
             consumer_pt = self.create_pt(context, consumer_ptg_id,
                                          name=CONSUMER_PT_NAME % (order,
                                                                   pt_type))
@@ -153,6 +226,14 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                 context._plugin_context, instance_type, provider_pt[
                     "port_id"], svc_mgmt_pt["port_id"], right_port=consumer_pt[
                     "port_id"])
+            floating_ip = self.svc_mgr.get_service_floating_ip(
+                context._plugin_context, sc_node['service_type'])
+            firewall_desc.update({'vm_management_ip': floating_ip})
+            firewall_desc.update(
+                {'provider_ptg_ips': provider_port["fixed_ips"][0][
+                    "ip_address"]})
+            stack_template['resources']['Firewall']['properties'][
+                'description'] = str(firewall_desc)
 
         else:
             # Create provider port. Pass PT name as SERVICE_PT
@@ -179,6 +260,19 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             config_param_values[param_name] = member
             member_count += 1
 
+    def _generate_firewall_rule_template(self, firewall):
+        # rule_name = "Rule_%s" % firewall["rule_no"]
+        return {"type": "OS::Neutron::FirewallRule",
+                "properties": {
+                    "protocol": firewall.get("protocol"),
+                    "enabled": True,
+                    "destination_port": firewall.get("destination_port"),
+                    "action": "allow",
+                    "source_ip_address": firewall.get("consumer_cidr")
+                    }
+                }
+
+
     def _generate_pool_member_template(self, param_name):
         return {"Type": "OS::Neutron::PoolMember",
                 "Properties": {
@@ -188,7 +282,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     "protocol_port": 80,
                     "weight": 1}}
 
-    # Magesh Need to pass port name for Cisco.
+    # Need to pass port name for Cisco.
     def create_pt(self, context, ptg_id, name=None, port_id=None):
         if not name:
             name = "port1"
