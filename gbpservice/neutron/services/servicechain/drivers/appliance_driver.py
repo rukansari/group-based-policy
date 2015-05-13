@@ -80,18 +80,19 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         else:
             config_param_names = list()
         # Retrieve classifier details
-        classifier_id = sc_instance.get('classifier_id')
-        classifier = self._grouppolicy_plugin.get_policy_classifier(
-            context._plugin_context, classifier_id)
+        # classifier_id = sc_instance.get('classifier_id')
+        # classifier = self._grouppolicy_plugin.get_policy_classifier(
+        #    context._plugin_context, classifier_id)
 
-        # Retrieve consumer details
+        # Retrieve consumer details - With Intercloud SC instance is created
+        # on just provider create. Consumer is not coming
         consumer_ptg_id = sc_instance.get('consumer_ptg_id')
-        consumer_ptg = self._grouppolicy_plugin.get_policy_target_group(
-            context._plugin_context, consumer_ptg_id)
+        # consumer_ptg = self._grouppolicy_plugin.get_policy_target_group(
+        #    context._plugin_context, consumer_ptg_id)
         # consumer_ptg_subnet_id = consumer_ptg[0]['subnets'][0]
-        subnet = self._core_plugin.get_subnet(
-            context._plugin_context, consumer_ptg['subnets'][0])
-        consumer_cidr = subnet['cidr']
+        # subnet = self._core_plugin.get_subnet(
+        #    context._plugin_context, consumer_ptg['subnets'][0])
+        # consumer_cidr = subnet['cidr']
 
         # Retrieve provider details
         provider_ptg_id = sc_instance.get('provider_ptg_id')
@@ -213,14 +214,17 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                                 SC_METADATA % (sc_instance_id, order,
                                                provider_ptg_id,
                                                svc_mgmt_port['id']))
+            # LB driver now uses vip port itself to launch VM
             # Create provider port. Pass PT name as SERVICE_PT
-            pt_type = SERVICE_PT
-            provider_pt = self.create_pt(context, provider_ptg_id,
-                                         name=PROVIDER_PT_NAME % (order,
-                                                                  pt_type))
+            # pt_type = SERVICE_PT
+            # provider_pt = self.create_pt(context, provider_ptg_id,
+            #                             name=PROVIDER_PT_NAME % (order,
+            #                                                      pt_type))
+            '''
             service_instance_id = self.svc_mgr.create_service_instance(
                 context._plugin_context, instance_type, provider_pt[
                     "port_id"], svc_mgmt_pt["port_id"])
+            '''
 
         if instance_type == 'FIREWALL_TRANSPARENT':
 
@@ -369,9 +373,9 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                                 self._grouppolicy_plugin.delete_policy_target(
                                     context._plugin_context, policy_targets[0][
                                         'id'])
-    
-                    self.svc_mgr.delete_service_instance(
-                        context._plugin_context, node['service_type'])
+                    if node['service_type'] == 'FIREWALL_TRANSPARENT':
+                        self.svc_mgr.delete_service_instance(
+                            context._plugin_context, node['service_type'])
 
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
