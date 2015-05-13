@@ -39,7 +39,8 @@ TRANSPARENT_PT = "transparent"
 SERVICE_PT = "service"
 PROVIDER_PT_NAME = "chain_provider_%s_%s"
 CONSUMER_PT_NAME = "chain_consumer_%s_%s"
-SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s", "svc_mgmt_port":"%s"}'
+SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s", ' \
+              '"svc_mgmt_port":"%s"}'
 SVC_MGMT_PTG_NAME = cfg.CONF.appliance_driver.svc_management_ptg_name
 
 POOL_MEMBER_PARAMETER = {"Description": "Pool Member IP Address",
@@ -209,8 +210,9 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                                          port_id=svc_mgmt_port['id'])
             if 'service_chain_metadata' in config_param_names:
                 config_param_values['service_chain_metadata'] = (
-                                SC_METADATA % (sc_instance_id, order, provider_ptg_id,
-                                svc_mgmt_port['id']))
+                                SC_METADATA % (sc_instance_id, order,
+                                               provider_ptg_id,
+                                               svc_mgmt_port['id']))
             # Create provider port. Pass PT name as SERVICE_PT
             pt_type = SERVICE_PT
             provider_pt = self.create_pt(context, provider_ptg_id,
@@ -289,16 +291,13 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             member_count += 1
 
     def _generate_firewall_rule_template(self, firewall):
-        # rule_name = "Rule_%s" % firewall["rule_no"]
-        return { "type": "OS::Neutron::FirewallRule",
+        return {"type": "OS::Neutron::FirewallRule",
                 "properties": {
                     "protocol": firewall.get("protocol"),
-                    #"name": "rule-fw",
                     "enabled": True,
                     "destination_port": firewall.get("destination_port"),
                     "action": "allow",
                     "source_ip_address": firewall.get("consumer_cidr")
-                    # "description": "desc"
                     }
                 }
 
