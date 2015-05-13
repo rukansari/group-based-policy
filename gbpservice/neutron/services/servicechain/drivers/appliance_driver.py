@@ -27,7 +27,7 @@ from gbpservice.neutron.services.grouppolicy.common import constants
 
 appliance_driver_opts = [
     cfg.StrOpt('svc_management_ptg_name',
-               default='Service_Management',
+               default='Service_Management_Tier',
                help=_("Name of the PTG that is associated with the "
                       "service management network")),
 ]
@@ -39,7 +39,7 @@ TRANSPARENT_PT = "transparent"
 SERVICE_PT = "service"
 PROVIDER_PT_NAME = "chain_provider_%s_%s"
 CONSUMER_PT_NAME = "chain_consumer_%s_%s"
-SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s", "svc_mgmt_ptg":"%s"}'
+SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s", "svc_mgmt_port":"%s"}'
 SVC_MGMT_PTG_NAME = cfg.CONF.appliance_driver.svc_management_ptg_name
 
 POOL_MEMBER_PARAMETER = {"Description": "Pool Member IP Address",
@@ -195,14 +195,6 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             if ext_networks:
                 external_net_id = ext_networks[0]['id']
             config_param_values['external_network_id'] = external_net_id
- 
-        node_params = (stack_template.get('Parameters')
-                       or stack_template.get('parameters'))
-        if node_params:
-            for parameter in config_param_values.keys():
-                if parameter in node_params.keys():
-                    stack_params[parameter] = config_param_values[parameter]
-        LOG.debug(stack_template)
         
         firewall_desc = dict()
         instance_type = sc_node['service_type']
@@ -215,6 +207,10 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             # svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'])
             svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'],
                                          port_id=svc_mgmt_port['id'])
+            if 'service_chain_metadata' in config_param_names:
+                config_param_values['service_chain_metadata'] = (
+                                SC_METADATA % (sc_instance_id, order, provider_ptg_id,
+                                svc_mgmt_port['id']))
             # Create provider port. Pass PT name as SERVICE_PT
             pt_type = SERVICE_PT
             provider_pt = self.create_pt(context, provider_ptg_id,
@@ -270,6 +266,13 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             stack_template['resources']['Firewall']['properties'][
                 'description'] = str(firewall_desc)
 
+        node_params = (stack_template.get('Parameters')
+                       or stack_template.get('parameters'))
+        if node_params:
+            for parameter in config_param_values.keys():
+                if parameter in node_params.keys():
+                    stack_params[parameter] = config_param_values[parameter]
+        LOG.debug(stack_template)
         return stack_template, stack_params
 
     def _generate_pool_members(self, context, stack_template,
