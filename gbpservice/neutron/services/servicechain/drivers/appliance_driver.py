@@ -305,7 +305,6 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             context._plugin_context, {"policy_target": pt})
 
     def delete_servicechain_instance_postcommit(self, context):
-
         filters = {'id': context.current['servicechain_specs']}
         specs = context._plugin.get_servicechain_specs(
             context._plugin_context, filters)
@@ -316,33 +315,45 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             sc_nodes = context._plugin.get_servicechain_nodes(
                 context._plugin_context, filters)
             for node in sc_nodes:
-                instance_ports = self.svc_mgr.get_service_ports(
-                    context._plugin_context, node['service_type'])
-                # instance_ports = self.svc_mgr.get_service_ports(
-                #     context._plugin_context, node['service_type'])
-                if instance_ports:
-                    if instance_ports.get("data_port_id"):
-                        filters = {'port_id': [instance_ports['data_port_id']]}
-                        policy_targets = (
-                            self._grouppolicy_plugin.get_policy_targets(
-                                context._plugin_context, filters))
-                        if policy_targets:
-                            self._grouppolicy_plugin.delete_policy_target(
-                                context._plugin_context, policy_targets[0][
-                                    'id'])
+                stack_template = node.get('config')
+                stack_template = jsonutils.loads(stack_template)
+                if node['service_type'] ==  pconst.LOADBALANCER:
+                    provider = (
+                        stack_template['Resources']['HaproxyPool'][
+                                    'Properties'].get('provider'))
+                if (node['service_type'] ==  pconst.LOADBALANCER and
+                    provider == 'haproxy_on_vm' or
+                    node['service_type'] == 'FIREWALL_TRANSPARENT'):
 
-                    if instance_ports.get("mgmt_port_id"):
-                        filters = {'port_id': [instance_ports['mgmt_port_id']]}
-                        policy_targets = (
-                            self._grouppolicy_plugin.get_policy_targets(
-                                context._plugin_context, filters))
-                        if policy_targets:
-                            self._grouppolicy_plugin.delete_policy_target(
-                                context._plugin_context, policy_targets[0][
-                                    'id'])
-
-        self.svc_mgr.delete_service_instance(
-            context._plugin_context, node['service_type'])
+                    instance_ports = self.svc_mgr.get_service_ports(
+                        context._plugin_context, node['service_type'])
+                    # instance_ports = self.svc_mgr.get_service_ports(
+                    #     context._plugin_context, node['service_type'])
+                    if instance_ports:
+                        if instance_ports.get("data_port_id"):
+                            filters = {'port_id': [instance_ports[
+                                                    'data_port_id']]}
+                            policy_targets = (
+                                self._grouppolicy_plugin.get_policy_targets(
+                                    context._plugin_context, filters))
+                            if policy_targets:
+                                self._grouppolicy_plugin.delete_policy_target(
+                                    context._plugin_context, policy_targets[0][
+                                        'id'])
+    
+                        if instance_ports.get("mgmt_port_id"):
+                            filters = {'port_id': [instance_ports[
+                                                        'mgmt_port_id']]}
+                            policy_targets = (
+                                self._grouppolicy_plugin.get_policy_targets(
+                                    context._plugin_context, filters))
+                            if policy_targets:
+                                self._grouppolicy_plugin.delete_policy_target(
+                                    context._plugin_context, policy_targets[0][
+                                        'id'])
+    
+                    self.svc_mgr.delete_service_instance(
+                        context._plugin_context, node['service_type'])
 
         self._delete_servicechain_instance_stacks(context._plugin_context,
                                                   context.current['id'])
