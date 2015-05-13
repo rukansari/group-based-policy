@@ -39,7 +39,8 @@ TRANSPARENT_PT = "transparent"
 SERVICE_PT = "service"
 PROVIDER_PT_NAME = "chain_provider_%s_%s"
 CONSUMER_PT_NAME = "chain_consumer_%s_%s"
-SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s", "svc_mgmt_port":"%s"}'
+SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s", ' \
+              '"svc_mgmt_port":"%s"}'
 SVC_MGMT_PTG_NAME = cfg.CONF.appliance_driver.svc_management_ptg_name
 
 POOL_MEMBER_PARAMETER = {"Description": "Pool Member IP Address",
@@ -101,7 +102,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         provider_policy_rule_sets = \
             self._grouppolicy_plugin.get_policy_rule_sets(
                 context._plugin_context,
-		filters={'id': provider_policy_rule_sets_list})
+                filters={'id': provider_policy_rule_sets_list})
                 #filters=provider_policy_rule_sets_list)
 
         # Get service instance type
@@ -134,7 +135,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                         firewall_rule_dict = (
                             dict(rule_no=(i+1),
                             protocol=policy_action_classifier.get("protocol"),
-                            consumer_cidr=consumer_cidr,
+                            consumer_cidr="0.0.0.0/0",
                             destination_port=policy_action_classifier.get(
                                 "port_range"))
                         )
@@ -182,7 +183,7 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         if 'service_chain_metadata' in config_param_names:
             config_param_values['service_chain_metadata'] = (
                 SC_METADATA % (sc_instance_id, order, provider_ptg_id,
-							   svc_mgmt_ptgs[0]['id']))
+                               svc_mgmt_ptgs[0]['id']))
         if 'svc_mgmt_ptg' in config_param_names:
             config_param_values['svc_mgmt_ptg'] = svc_mgmt_ptgs[0]['id']
 
@@ -209,8 +210,9 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                                          port_id=svc_mgmt_port['id'])
             if 'service_chain_metadata' in config_param_names:
                 config_param_values['service_chain_metadata'] = (
-                                SC_METADATA % (sc_instance_id, order, provider_ptg_id,
-                                svc_mgmt_port['id']))
+                                SC_METADATA % (sc_instance_id, order,
+                                               provider_ptg_id,
+                                               svc_mgmt_port['id']))
             # Create provider port. Pass PT name as SERVICE_PT
             pt_type = SERVICE_PT
             provider_pt = self.create_pt(context, provider_ptg_id,
@@ -221,29 +223,48 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     "port_id"], svc_mgmt_pt["port_id"])
 
         if instance_type == 'FIREWALL_TRANSPARENT':
-            # Create provider & consumer port for Firewall
-            provider_port = self.svc_mgr.create_port(
-            context._plugin_context.tenant_id,provider_ptg['subnets'][0],
+
+            # Create service mgmt pt we won't have floating ip for CISCO
+            svc_mgmt_port = self.svc_mgr.create_port(
+                context._plugin_context.tenant_id, svc_mgmt_ptgs[0]
+                ['subnets'][0], service_type=sc_node['service_type'])
+
+            svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'],
+                                         port_id=svc_mgmt_port['id'])
+
+            # Create two provider port (*_left and *_right represents as
+            # consumer and provider port) for Firewall
+            provider_port_left = self.svc_mgr.create_port(
+                context._plugin_context.tenant_id,provider_ptg['subnets'][0],
                 service_type=sc_node['service_type'])
-            provider_pt = self.create_pt(context, provider_ptg_id,
+            provider_pt_left = self.create_pt(context, provider_ptg_id,
+                                         name=CONSUMER_PT_NAME % (order,
+                                                                  pt_type),
+                                         port_id=provider_port_left["id"])
+
+            provider_port_right = self.svc_mgr.create_port(
+                context._plugin_context.tenant_id,provider_ptg['subnets'][0],
+                service_type=sc_node['service_type'])
+            provider_pt_right = self.create_pt(context, provider_ptg_id,
                                          name=PROVIDER_PT_NAME % (order,
                                                                   pt_type),
-                                         port_id=provider_port["id"])
+                                         port_id=provider_port_right["id"])
+
             # Create provider & consumer port for Firewall
-            #provider_pt = self.create_pt(context, provider_ptg_id,
-            #                             name=PROVIDER_PT_NAME % (order,
-            #                                                      pt_type))
-            consumer_pt = self.create_pt(context, consumer_ptg_id,
-                                         name=CONSUMER_PT_NAME % (order,
-                                                                  pt_type))
+            # consumer_pt = self.create_pt(context, consumer_ptg_id,
+            #                              name=CONSUMER_PT_NAME % (order,
+            #                                                       pt_type))
+
             service_instance_id = self.svc_mgr.create_service_instance(
-                context._plugin_context, instance_type, provider_pt[
-                    "port_id"], svc_mgmt_pt["port_id"], right_port=consumer_pt[
-                    "port_id"])
-            floating_ip = self.svc_mgr.get_service_floating_ip(context._plugin_context,
-                          sc_node['service_type'])
+                context._plugin_context, instance_type, provider_pt_left[
+                    "port_id"], svc_mgmt_pt["port_id"],
+                right_port=provider_pt_right["port_id"])
+
+            floating_ip = self.svc_mgr.get_service_floating_ip(
+                context._plugin_context, sc_node['service_type'])
             firewall_desc.update({'vm_management_ip': floating_ip})
-            firewall_desc.update({'provider_ptg_ips': provider_port["fixed_ips"][0]["ip_address"]})
+            firewall_desc.update({'provider_ptg_info': [provider_port_right[
+                'mac_address']]})
             stack_template['resources']['Firewall']['properties'][
                 'description'] = str(firewall_desc)
 
@@ -270,16 +291,13 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             member_count += 1
 
     def _generate_firewall_rule_template(self, firewall):
-        # rule_name = "Rule_%s" % firewall["rule_no"]
-        return { "type": "OS::Neutron::FirewallRule",
+        return {"type": "OS::Neutron::FirewallRule",
                 "properties": {
                     "protocol": firewall.get("protocol"),
-                    #"name": "rule-fw",
                     "enabled": True,
                     "destination_port": firewall.get("destination_port"),
                     "action": "allow",
                     "source_ip_address": firewall.get("consumer_cidr")
-                    # "description": "desc"
                     }
                 }
 
