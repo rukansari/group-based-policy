@@ -233,26 +233,30 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                 context._plugin_context.tenant_id, svc_mgmt_ptgs[0]
                 ['subnets'][0], service_type=sc_node['service_type'])
 
+            # TODO (Rukshana) Do u need to fill description field here?
             svc_mgmt_pt = self.create_pt(context, svc_mgmt_ptgs[0]['id'],
-                                         port_id=svc_mgmt_port['id'])
+                                         port_id=svc_mgmt_port['id'],
+                                         description="")
 
             # Create two provider port (*_left and *_right represents as
             # consumer and provider port) for Firewall
             # provider_port_left = self.svc_mgr.create_port(
             #     context._plugin_context.tenant_id,provider_ptg['subnets'][0],
             #     service_type=sc_node['service_type'])
-            provider_pt_left = self.create_pt(context, provider_ptg_id,
-                                         name=CONSUMER_PT_NAME % (order,
-                                                                  pt_type))
+            provider_pt_left = self.create_pt(
+                context, provider_ptg_id, name=CONSUMER_PT_NAME % (order,
+                                                                   pt_type),
+                description="")
             provider_port_left = self._core_plugin.get_port(
                 context._plugin_context, provider_pt_left["port_id"])
 
             # provider_port_right = self.svc_mgr.create_port(
             #     context._plugin_context.tenant_id,provider_ptg['subnets'][0],
             #     service_type=sc_node['service_type'])
-            provider_pt_right = self.create_pt(context, provider_ptg_id,
-                                         name=PROVIDER_PT_NAME % (order,
-                                                                  pt_type))
+            provider_pt_right = self.create_pt(
+                context, provider_ptg_id, name=PROVIDER_PT_NAME % (order,
+                                                                   pt_type),
+                description="")
 
             provider_port_right = self._core_plugin.get_port(
                 context._plugin_context, provider_pt_right["port_id"])
@@ -320,10 +324,11 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
                     "weight": 1}}
 
     # Need to pass port name for Cisco.
-    def create_pt(self, context, ptg_id, name=None, port_id=None):
+    def create_pt(self, context, ptg_id, name=None, port_id=None,
+                  description=" "):
         if not name:
             name = "port1"
-        pt = dict(name=name, description="",
+        pt = dict(name=name, description=description,
                   tenant_id=context._plugin_context.tenant_id,
                   policy_target_group_id=ptg_id, port_id=port_id)
 
