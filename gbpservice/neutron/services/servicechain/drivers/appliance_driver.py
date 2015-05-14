@@ -238,21 +238,25 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
 
             # Create two provider port (*_left and *_right represents as
             # consumer and provider port) for Firewall
-            provider_port_left = self.svc_mgr.create_port(
-                context._plugin_context.tenant_id,provider_ptg['subnets'][0],
-                service_type=sc_node['service_type'])
+            # provider_port_left = self.svc_mgr.create_port(
+            #     context._plugin_context.tenant_id,provider_ptg['subnets'][0],
+            #     service_type=sc_node['service_type'])
             provider_pt_left = self.create_pt(context, provider_ptg_id,
                                          name=CONSUMER_PT_NAME % (order,
-                                                                  pt_type),
-                                         port_id=provider_port_left["id"])
+                                                                  pt_type))
+            provider_port_left = self._core_plugin.get_port(
+                context._plugin_context, provider_pt_left["port_id"])
 
-            provider_port_right = self.svc_mgr.create_port(
-                context._plugin_context.tenant_id,provider_ptg['subnets'][0],
-                service_type=sc_node['service_type'])
+            # provider_port_right = self.svc_mgr.create_port(
+            #     context._plugin_context.tenant_id,provider_ptg['subnets'][0],
+            #     service_type=sc_node['service_type'])
             provider_pt_right = self.create_pt(context, provider_ptg_id,
                                          name=PROVIDER_PT_NAME % (order,
-                                                                  pt_type),
-                                         port_id=provider_port_right["id"])
+                                                                  pt_type))
+
+            provider_port_right = self._core_plugin.get_port(
+                context._plugin_context, provider_pt_right["port_id"])
+
 
             # Create provider & consumer port for Firewall
             # consumer_pt = self.create_pt(context, consumer_ptg_id,
